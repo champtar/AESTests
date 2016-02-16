@@ -1,0 +1,51 @@
+# Compile
+gcc -c -I${JAVA_HOME}/include/ -I${JAVA_HOME}/include/linux/ -fPIC -O2 *.c
+gcc -O2 -o libjnitests.so -shared -Wl,-soname,libjnitests.so *.o -lcrypto
+javac AESTests.java
+
+
+# Run
+java -Djava.library.path='./' AESTests
+java -Djava.library.path='./' HMACSHA1Tests
+
+# Tests
+We encrypt 1000 - 20 bytes (20 is the offset)
+We hash 1000 - 20 + 4 bytes (20 is the offset, 4 the roc) and write all 20 bytes of hmacsha1 at offset 1000
+
+JAVA_CTR is a copy/paste of current libjitsi implementation, using JCE (AES/ECB/NoPadding) to encrypt each block (one call to cipher.doFinal() per block)
+
+JCE_CTR is just using JCE CTR implementation (AES/CTR/NoPadding) (one call to cipher.init() and one to cipher.doFinal() per packet)
+SunPKCS11_CTR is just using SunPKCS11 CTR implementation (AES/CTR/NoPadding) (one call to cipher.init() and one to cipher.doFinal() per packet)
+BC_CTR is just using bouncy castle CTR implementation (AES/CTR/NoPadding) (one call to cipher.init() and one to cipher.doFinal() per packet)
+
+OPENSSL_CTR is using OpenSSL CTR implementation (one JNI call per packet)
+
+
+# Results (on my computer: core i7, fedora23)
+OPENSSL_CTR : 396 ns
+JAVA_CTR : 2610 ns
+JCE_CTR : 3921 ns
+BC_CTR : 8415 ns
+SunPKCS11_CTR : 33747 ns
+
+OPENSSL2_HMACSHA1 : 1503 ns
+OPENSSL1_HMACSHA1 : 2214 ns
+SunPKCS11_HMACSHA1 : 4153 ns
+JCE_HMACSHA1 : 4417 ns
+BC_HMACSHA1 : 5022 ns
+
+OpenSSL speed (in 1000s of bytes per second)
+openssl speed -evp AES-128-CTR
+1024 bytes => 4618991.27k
+openssl speed -evp SHA1
+1024 bytes => 709489.46k
+
+
+# Other benchs (on my computer)
+A call to an no-op JNI function take ~7ns
+GetByteArrayRegion take ~17ns (on 16 byte array)
+GetPrimitiveArrayCritical + ReleasePrimitiveArrayCritical take ~25ns
+so on the 390ns for an OpenSSL CTR round, 70ns (~20%) is data "transfer" (copy or pinning or ...)
+
+# Further optimisation
+We could do the Mac (hmac-sha1) in the same call
